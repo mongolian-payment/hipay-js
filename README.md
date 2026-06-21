@@ -1,6 +1,16 @@
 # @mongolian-payment/hipay
 
-TypeScript SDK for the HiPay payment provider in Mongolia. Zero dependencies, dual ESM/CJS builds, full type safety.
+HiPay payment SDK for Node.js — create checkouts, check payments, manage corrections and statements.
+
+[![npm version](https://img.shields.io/npm/v/@mongolian-payment/hipay.svg)](https://www.npmjs.com/package/@mongolian-payment/hipay)
+[![license](https://img.shields.io/npm/l/@mongolian-payment/hipay.svg)](./LICENSE)
+
+> Part of the **[mongolian-payment](https://github.com/mongolian-payment)** SDK suite.
+> Also available for Python: **[mongolian-payment-hipay](https://pypi.org/project/mongolian-payment-hipay/)** ([source](https://github.com/mongolian-payment/hipay-py)).
+
+## Requirements
+
+- Node.js >= 18.0.0 (uses native `fetch`)
 
 ## Installation
 
@@ -8,11 +18,9 @@ TypeScript SDK for the HiPay payment provider in Mongolia. Zero dependencies, du
 npm install @mongolian-payment/hipay
 ```
 
-Requires Node.js >= 18.0.0 (uses native `fetch`).
-
 ## Quick Start
 
-```ts
+```typescript
 import { HiPayClient } from "@mongolian-payment/hipay";
 
 const client = new HiPayClient({
@@ -33,88 +41,80 @@ console.log(status.status); // e.g. "PAID"
 // Get payment details
 const payment = await client.getPayment(status.paymentId!);
 console.log(payment.paymentBrand);
+```
 
-// Submit a payment correction (refund)
+## Configuration from Environment Variables
+
+```typescript
+import { HiPayClient, loadConfigFromEnv } from "@mongolian-payment/hipay";
+
+const client = new HiPayClient(loadConfigFromEnv());
+```
+
+| Variable          | Description                     |
+| ----------------- | ------------------------------- |
+| `HIPAY_ENDPOINT`  | HiPay API base URL              |
+| `HIPAY_TOKEN`     | Bearer token for authentication |
+| `HIPAY_ENTITY_ID` | Entity ID assigned by HiPay     |
+
+> Never hard-code credentials — load them from the environment or a secrets vault.
+
+## API Reference
+
+Every request is authenticated with the configured Bearer token. Methods throw
+`HiPayError` when the API returns a non-success response (`code !== 1`).
+
+| Method | Description |
+|--------|-------------|
+| `checkout(amount, options?)` | Create a checkout → `{ checkoutId, qrData, expires, ... }` |
+| `getCheckout(checkoutId)` | Get checkout status → `{ status, paymentId, ... }` |
+| `getPayment(paymentId)` | Get payment details |
+| `paymentCorrection(paymentId)` | Submit a payment correction (refund/reversal) → `{ correction_paymentId }` |
+| `statement(date)` | Get a daily statement for `"YYYY-MM-DD"` → paginated data |
+
+```typescript
+// checkout auto-fills entityId, currency (MNT), qrData (true), and signal (false)
+const checkout = await client.checkout(50000, {
+  ipAddress: "192.168.1.1",
+  items: [
+    {
+      itemno: "SKU001",
+      names: "Product Name",
+      price: 25000,
+      quantity: 2,
+      brand: "Brand",
+      measure: "pcs",
+      vat: 2500,
+      citytax: 100,
+    },
+  ],
+});
+
+// Submit a correction (refund) for a completed payment
 const correction = await client.paymentCorrection(payment.paymentId!);
 console.log(correction.correction_paymentId);
 
-// Get daily statement
+// Daily statement
 const statement = await client.statement("2026-02-27");
 console.log(statement.data?.list);
 ```
 
-## Configuration
-
-### Direct Configuration
-
-```ts
-const client = new HiPayClient({
-  endpoint: "https://merchant.hipay.mn/api",
-  token: "YOUR_BEARER_TOKEN",
-  entityId: "YOUR_ENTITY_ID",
-});
-```
-
-### Environment Variables
-
-```ts
-import { loadConfigFromEnv, HiPayClient } from "@mongolian-payment/hipay";
-
-// Reads HIPAY_ENDPOINT, HIPAY_TOKEN, HIPAY_ENTITY_ID
-const config = loadConfigFromEnv();
-const client = new HiPayClient(config);
-```
-
-| Variable | Description |
-|---|---|
-| `HIPAY_ENDPOINT` | HiPay API base URL |
-| `HIPAY_TOKEN` | Bearer token for authentication |
-| `HIPAY_ENTITY_ID` | Entity ID assigned by HiPay |
-
-## API Reference
-
-### `client.checkout(amount, options?)`
-
-Create a new checkout. Automatically fills `entityId`, `currency` (MNT), `qrData` (true), and `signal` (false).
-
-| Parameter | Type | Description |
-|---|---|---|
-| `amount` | `number` | Payment amount in MNT |
-| `options.items` | `CheckOutItem[]` | Optional line items |
-| `options.ipAddress` | `string` | Optional customer IP address |
-
-Returns `HiPayCheckoutResponse` with `checkoutId`, `qrData`, `expires`, etc.
-
-### `client.getCheckout(checkoutId)`
-
-Get checkout status. Returns `HiPayCheckoutGetResponse` with `status`, `paymentId`, etc.
-
-### `client.getPayment(paymentId)`
-
-Get payment details. Returns `HiPayPaymentGetResponse` with full payment info.
-
-### `client.paymentCorrection(paymentId)`
-
-Submit a payment correction (refund/reversal). Returns `HiPayPaymentCorrectionResponse` with `correction_paymentId`.
-
-### `client.statement(date)`
-
-Get a daily payment statement. Date format: `"YYYY-MM-DD"`. Returns `HiPayStatementResponse` with paginated data.
-
 ## Error Handling
 
-All methods throw `HiPayError` when the API returns a non-success response (`code !== 1`) or when HTTP errors occur.
+All API errors throw `HiPayError`, which includes the API response code and any
+validation details:
 
-```ts
+```typescript
 import { HiPayError } from "@mongolian-payment/hipay";
 
 try {
   await client.checkout(50000);
 } catch (err) {
   if (err instanceof HiPayError) {
-    console.error(err.message);   // Human-readable error
-    console.error(err.code);      // API response code
-    console.error(err.details);   // Validation details [{field, issue}]
+    console.error(err.message);  // Human-readable message
+    console.error(err.code);     // API response code
+    console.error(err.details);  // Validation details [{ field, issue }]
+    console.error(err.response); // Raw response body
   }
 }
 ```
